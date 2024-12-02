@@ -3,36 +3,42 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Linear Regression Assumptions</title>
+    <title>Query App</title>
 </head>
 <body>
-    <h1>Interactive Linear Regression Assumptions</h1>
+    <h1>Query App</h1>
+    <form method="POST" enctype="multipart/form-data">
+        <label for="queryType">Select Query Type:</label>
+        <select id="queryType" name="queryType" required>
+            <option value="text">Text Query</option>
+            <option value="image">Image Query</option>
+            <option value="hybrid">Hybrid Query</option>
+        </select>
+        <br><br>
 
-    <form method="POST">
-        <label for="N">Sample Size (N):</label>
-        <input type="number" id="N" name="N" required><br>
+        <div id="textQueryDiv">
+            <label for="textQuery">Enter Text Query:</label>
+            <input type="text" id="textQuery" name="textQuery">
+        </div>
 
-        <label for="mu">Mean (μ):</label>
-        <input type="number" step="any" id="mu" name="mu" required><br>
+        <div id="imageQueryDiv">
+            <label for="imageQuery">Upload Image Query:</label>
+            <input type="file" id="imageQuery" name="imageQuery" accept="image/*">
+        </div>
 
-        <label for="sigma2">Variance (σ²):</label>
-        <input type="number" step="any" id="sigma2" name="sigma2" required><br>
+        <div id="hybridQueryDiv">
+            <label for="weight">Hybrid Query Weight (0.0 - 1.0):</label>
+            <input type="number" step="any" id="weight" name="weight" min="0.0" max="1.0" value="0.5">
+        </div>
 
-        <label for="S">Number of Simulations (S):</label>
-        <input type="number" id="S" name="S" required><br>
+        <div id="pcaDiv">
+            <label for="usePCA">Use PCA:</label>
+            <input type="checkbox" id="usePCA" name="usePCA">
+            <label for="kComponents">Number of Components:</label>
+            <input type="number" id="kComponents" name="kComponents" value="10" min="1">
+        </div>
 
-        <button type="submit">Generate</button>
+        <br><button type="submit">Search</button>
     </form>
-
-    {% if plot1 and plot2 %}
-        <h2>Generated Plot</h2>
-        <img src="{{ plot1 }}" alt="Regression Plot" style="width: 600px;">
-
-        <h2>Histogram of Slopes and Intercepts</h2>
-        <img src="{{ plot2 }}" alt="Histograms" style="width: 600px;">
-
-        <p>Proportion of slopes more extreme than calculated slope: {{ slope_extreme | round(2) }}%</p>
-        <p>Proportion of intercepts more extreme than calculated intercept: {{ intercept_extreme | round(2) }}%</p>
-    {% endif %}
 </body>
 </html>

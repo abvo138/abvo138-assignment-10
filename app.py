@@ -1,131 +1,95 @@
-from flask import Flask, render_template, request, url_for
+from flask import Flask, request, render_template, jsonify
+from PIL import Image as PILImage
+import open_clip
+import torch.nn.functional as F
+from sklearn.metrics.pairwise import cosine_similarity
+import pickle
+import os
 import numpy as np
-import matplotlib
-matplotlib.use('Agg')  # Use the 'Agg' backend for non-GUI rendering
-import matplotlib.pyplot as plt
-from sklearn.linear_model import LinearRegression
-import io
-import base64
+import zipfile
 
+# Unzip coco_images_resized.zip if not already done
+if not os.path.exists("coco_images_resized"):
+    with zipfile.ZipFile("coco_images_resized.zip", "r") as zip_ref:
+        zip_ref.extractall("coco_images_resized")
+
+# Load precomputed embeddings
+with open("image_embeddings.pickle", "rb") as f:
+    embeddings_data = pickle.load(f)
+
+# Initialize the Flask app
 app = Flask(__name__)
 
-# 50, 0, 0.5, 1000 
+# Load the CLIP model and tokenizer
+model, _, preprocess = open_clip.create_model_and_transforms('ViT-B-32', pretrained='openai')
+tokenizer = open_clip.get_tokenizer('ViT-B-32')
+model.eval()
 
-def generate_plots(N, mu, sigma2, S):
-    plt.clf()
-    plt.close()
-    # STEP 1
-    # TODO 1: Generate a random dataset X of size N with values between 0 and 1
-    # and a random dataset Y with normal additive error (mean mu, variance sigma^2).
-    # Hint: Use numpy's random's functions to generate values for X and Y
+# Database setup
+DATABASE = {
+    "images": np.array(embeddings_data["embeddings"]),  # Loaded embeddings
+    "image_paths": embeddings_data["image_paths"]  # Corresponding image paths
+}
 
-    # Define parameters
-    # N = Sample size, you can change it as needed
-    # mu = Mean of the normal distribution for error
-    # sigma = Standard deviation (sqrt of variance) of the normal distribution for error
+# Helper function to calculate the top 5 most similar images
+def get_top_k_similar(query_embedding, db_embeddings, db_paths, top_k=5):
+    query_embedding = query_embedding.detach().numpy()
+    scores = cosine_similarity(query_embedding, db_embeddings)
+    indices = np.argsort(-scores[0])[:top_k]
+    return [(db_paths[i], scores[0][i]) for i in indices]
 
-    sigma = np.sqrt(sigma2)
-
-    X = np.random.rand(N)  # Replace with code to generate random values for X
-    error = np.random.normal(mu, sigma, N)
-    Y = X + error  # Replace with code to generate random values for Y with specified mean and variance
-
-    # TODO 2: Fit a linear regression model to X and Y
-    # Hint: Use Scikit Learn
-    X_reshaped = X.reshape(-1,1)
-
-    model = LinearRegression()
-    model.fit(X_reshaped, Y)  # Replace with code to fit the model
-    slope = model.coef_[0]  # Replace with code to extract slope from the fitted model
-    intercept = model.intercept_  # Replace with code to extract intercept from the fitted model
-
-    # TODO 3: Generate a scatter plot of (X, Y) with the fitted regression line
-    # Hint: Use Matplotlib
-    # Label the x-axis as "X" and the y-axis as "Y".
-    # Add a title showing the regression line equation using the slope and intercept values.
-    # Finally, save the plot to "static/plot1.png" using plt.savefig()
-    
-    # Generate scatter plot of (X, Y)
-    plt.scatter(X, Y, label="Data Points", color="blue")
-
-    # Plot the regression line
-    plt.plot(X, model.predict(X_reshaped), color="red", label=f"y = {slope:.2f}x + {intercept:.2f}")
-
-    # Label axes and add title
-    plt.xlabel("X")
-    plt.ylabel("Y")
-    plt.title(f"Regression Line: y = {slope:.2f}x + {intercept:.2f}")
-    plt.legend()
-
-    plot1_path = "static/plot1.png"
-    plt.savefig(plot1_path)
-    plt.close()
-    # Replace the above TODO 3 block with code to generate and save the plot
-
-    
-    # Step 2: Run S simulations and create histograms of slopes and intercepts
-
-    # TODO 1: Initialize empty lists for slopes and intercepts
-    # Hint: You will store the slope and intercept of each simulation's linear regression here.
-    slopes = []  # Replace with code to initialize empty list
-    intercepts = []  # Replace with code to initialize empty list
-
-    # TODO 2: Run a loop S times to generate datasets and calculate slopes and intercepts
-    # Hint: For each iteration, create random X and Y values using the provided parameters
-    for _ in range(S):
-        # TODO: Generate random X values with size N between 0 and 1
-        X_sim = np.random.rand(N)  
-
-        # TODO: Generate Y values with normal additive error (mean mu, variance sigma^2)
-        error = np.random.normal(mu, sigma, N)
-        Y_sim = X_sim + error
-
-        # TODO: Fit a linear regression model to X_sim and Y_sim
-        sim_model = LinearRegression()
-        sim_model.fit(X_sim.reshape(-1, 1), Y_sim)
-
-        # TODO: Append the slope and intercept of the model to slopes and intercepts lists
-        slopes.append(sim_model.coef_[0])  # append slope
-        intercepts.append(sim_model.intercept_)  # append intercept
-
-    # Plot histograms of slopes and intercepts
-    plt.figure(figsize=(10, 5))
-    plt.hist(slopes, bins=20, alpha=0.5, color="blue", label="Slopes")
-    plt.hist(intercepts, bins=20, alpha=0.5, color="orange", label="Intercepts")
-    plt.axvline(slope, color="blue", linestyle="--", linewidth=1, label=f"Slope: {slope:.2f}")
-    plt.axvline(intercept, color="orange", linestyle="--", linewidth=1, label=f"Intercept: {intercept:.2f}")
-    plt.title("Histogram of Slopes and Intercepts")
-    plt.xlabel("Value")
-    plt.ylabel("Frequency")
-    plt.legend()
-    plot2_path = "static/plot2.png"
-    plt.savefig(plot2_path)
-    plt.close()
-
-    # Below code is already provided
-    # Calculate proportions of more extreme slopes and intercepts
-    # For slopes, we will count how many are greater than the initial slope; for intercepts, count how many are less.
-    slope_more_extreme = sum(s > slope for s in slopes) / S  # Already provided
-    intercept_more_extreme = sum(i < intercept for i in intercepts) / S  # Already provided
-
-    return plot1_path, plot2_path, slope_more_extreme, intercept_more_extreme
-
-@app.route("/", methods=["GET", "POST"])
+@app.route('/', methods=['GET', 'POST'])
 def index():
-    if request.method == "POST":
-        # Get user input
-        N = int(request.form["N"])
-        mu = float(request.form["mu"])
-        sigma2 = float(request.form["sigma2"])
-        S = int(request.form["S"])
+    if request.method == 'POST':
+        query_type = request.form.get("queryType")
+        top_k = 5
+        results = []
 
-        # Generate plots and results
-        plot1, plot2, slope_extreme, intercept_extreme = generate_plots(N, mu, sigma2, S)
+        if query_type == "text":
+            # Process text query
+            text_query = request.form.get("textQuery")
+            text_tokens = tokenizer([text_query])
+            text_embedding = F.normalize(model.encode_text(text_tokens))
+            results = get_top_k_similar(text_embedding, DATABASE["images"], DATABASE["image_paths"], top_k)
 
-        return render_template("index.html", plot1=plot1, plot2=plot2,
-                               slope_extreme=slope_extreme, intercept_extreme=intercept_extreme)
+        elif query_type == "image":
+            # Process image query
+            image_file = request.files.get("imageQuery")
+            if image_file:
+                image = PILImage.open(image_file)
+                image_tensor = preprocess(image).unsqueeze(0)
+                image_embedding = F.normalize(model.encode_image(image_tensor))
+                results = get_top_k_similar(image_embedding, DATABASE["images"], DATABASE["image_paths"], top_k)
+
+        elif query_type == "hybrid":
+            # Process hybrid query
+            text_query = request.form.get("textQuery")
+            image_file = request.files.get("imageQuery")
+            weight = float(request.form.get("weight", 0.5))
+
+            if image_file and text_query:
+                # Embed text
+                text_tokens = tokenizer([text_query])
+                text_embedding = F.normalize(model.encode_text(text_tokens))
+
+                # Embed image
+                image = PILImage.open(image_file)
+                image_tensor = preprocess(image).unsqueeze(0)
+                image_embedding = F.normalize(model.encode_image(image_tensor))
+
+                # Compute weighted hybrid embedding
+                hybrid_embedding = F.normalize(weight * text_embedding + (1 - weight) * image_embedding)
+                results = get_top_k_similar(hybrid_embedding, DATABASE["images"], DATABASE["image_paths"], top_k)
+
+        # Prepare results with filenames and scores
+        results_with_full_path = [
+            {"image_path": os.path.join("coco_images_resized", path), "score": score}
+            for path, score in results
+        ]
+        return jsonify({"results": results_with_full_path})
 
     return render_template("index.html")
 
-if __name__ == "__main__":
-    app.run(debug=True)
+# Run the Flask app on port 3000
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=3000, debug=True)
