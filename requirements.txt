@@ -4,4 +4,5 @@ torchvision
 scikit-learn
 Pillow
 open-clip-torch
-numpy
+numpy==1.26.0
+pandas
