@@ -1,0 +1,42 @@
+# This workflow will install Python dependencies, run the application, and lint with flake8.
+
+name: Python application
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v3
+      with:
+        python-version: "3.10"
+
+    - name: Install dependencies
+      run: |
+        make install  # Use the Makefile to install dependencies
+
+    - name: Run application
+      run: |
+        . venv/bin/activate  # Activate the virtual environment
+        make run &  # Start the Flask server in the background
+        sleep 5  # Sleep for a few seconds to ensure the server has time to start up
+        kill $(jobs -p)  # Stop the background server
+
+    - name: Lint with flake8
+      run: |
+        . venv/bin/activate  # Activate the virtual environment
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics || true
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics || true
