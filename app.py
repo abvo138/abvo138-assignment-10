@@ -27,10 +27,12 @@ model.eval()
 
 # Helper function to calculate the top 5 most similar images
 def get_top_k_similar(query_embedding, db_embeddings, db_paths, top_k=5):
-    query_embedding = query_embedding.detach().numpy()
+    if not isinstance(query_embedding, np.ndarray):
+        query_embedding = query_embedding.detach().numpy()  # Only detach if it's a tensor
     scores = cosine_similarity(query_embedding, db_embeddings)
     indices = np.argsort(-scores[0])[:top_k]
     return [(db_paths[i], scores[0][i]) for i in indices]
+
 
 # Function to apply PCA dimensionality reduction
 def apply_pca(embeddings, n_components):
@@ -52,50 +54,55 @@ def index():
         n_components = int(request.form.get("kComponents", 10)) if use_pca else None
         results = []
 
+        if use_pca:
+            # Apply PCA to database embeddings
+            pca = PCA(n_components=n_components)
+            db_embeddings = pca.fit_transform(DATABASE["images"])
+        else:
+            db_embeddings = DATABASE["images"]
+
         if query_type == "text":
-            # Process text query
             text_query = request.form.get("textQuery")
             text_tokens = tokenizer([text_query])
-            text_embedding = F.normalize(model.encode_text(text_tokens))
+            text_embedding = F.normalize(model.encode_text(text_tokens)).detach().numpy()  # Detach and convert to NumPy
 
-            # Apply PCA if enabled
-            embeddings = apply_pca(DATABASE["images"], n_components) if use_pca else DATABASE["images"]
-            results = get_top_k_similar(text_embedding, embeddings, DATABASE["image_paths"], top_k)
+            if use_pca:
+                text_embedding = pca.transform(text_embedding)
+
+            results = get_top_k_similar(text_embedding, db_embeddings, DATABASE["image_paths"], top_k)
 
         elif query_type == "image":
-            # Process image query
             image_file = request.files.get("imageQuery")
             if image_file:
                 image = PILImage.open(image_file)
                 image_tensor = preprocess(image).unsqueeze(0)
-                image_embedding = F.normalize(model.encode_image(image_tensor))
+                image_embedding = F.normalize(model.encode_image(image_tensor)).detach().numpy()  # Detach and convert to NumPy
 
-                # Apply PCA if enabled
-                embeddings = apply_pca(DATABASE["images"], n_components) if use_pca else DATABASE["images"]
-                results = get_top_k_similar(image_embedding, embeddings, DATABASE["image_paths"], top_k)
+
+                if use_pca:
+                    image_embedding = pca.transform(image_embedding)
+
+                results = get_top_k_similar(image_embedding, db_embeddings, DATABASE["image_paths"], top_k)
 
         elif query_type == "hybrid":
-            # Process hybrid query
             text_query = request.form.get("textQuery")
             image_file = request.files.get("imageQuery")
             weight = float(request.form.get("weight", 0.5))
 
             if image_file and text_query:
-                # Embed text
                 text_tokens = tokenizer([text_query])
-                text_embedding = F.normalize(model.encode_text(text_tokens))
+                text_embedding = F.normalize(model.encode_text(text_tokens)).detach().numpy()  # Detach and convert to NumPy
 
-                # Embed image
                 image = PILImage.open(image_file)
                 image_tensor = preprocess(image).unsqueeze(0)
-                image_embedding = F.normalize(model.encode_image(image_tensor))
+                image_embedding = F.normalize(model.encode_image(image_tensor)).detach().numpy()  # Detach and convert to NumPy
 
-                # Compute weighted hybrid embedding
-                hybrid_embedding = F.normalize(weight * text_embedding + (1 - weight) * image_embedding)
+                hybrid_embedding = weight * text_embedding + (1 - weight) * image_embedding
 
-                # Apply PCA if enabled
-                embeddings = apply_pca(DATABASE["images"], n_components) if use_pca else DATABASE["images"]
-                results = get_top_k_similar(hybrid_embedding, embeddings, DATABASE["image_paths"], top_k)
+                if use_pca:
+                    hybrid_embedding = pca.transform(hybrid_embedding)
+
+                results = get_top_k_similar(hybrid_embedding, db_embeddings, DATABASE["image_paths"], top_k)
 
         # Prepare results with filenames and scores
         results_with_full_path = [
